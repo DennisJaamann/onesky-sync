@@ -3,6 +3,8 @@ const fs = require("fs-extra");
 const path = require("path");
 const ora = require("ora");
 const chalk = require("chalk");
+const glob = require('glob');
+const unique = require('array-unique');
 
 function validationError(message) {
   console.error(chalk.bold.red(`✖ ${message}`));
@@ -70,7 +72,113 @@ module.exports = function(command, files = [], _options) {
       });
     },
 
-    download() {
+    downloadAll() {
+      if (!files.length) {
+        validationError("Path to output directory is required");
+      }
+      if (files.length > 1) {
+        validationError("Too many directories. Expected 1");
+      }
+
+      const options = Object.assign({}, _options);
+      const outDir = files[0];
+
+      const allFiles = glob.sync(outDir + '/**/*.json', {}).map(file => path.basename(file));
+      const uniqueFiles = unique(allFiles);
+
+      uniqueFiles.forEach(file => {
+        console.log(file);
+
+        const langsListPromise = Promise.resolve()
+          .then(() => {
+            if (!options.language) {
+              return Promise.reject();
+            }
+            return [options.language];
+          })
+          .catch(() => {
+            const downloadingLanguages = ora(
+              `Getting language list for \`${file}\``
+            ).start();
+
+            return onesky
+              .getLanguages({
+                apiKey: options.apiKey,
+                secret: options.secret,
+                projectId: options.projectId
+              })
+              .then(response => {
+                const { data } = JSON.parse(response);
+                console.log(data.map(lang => lang.code));
+                downloadingLanguages.succeed();
+
+                return data
+                  .filter(lang => !lang.is_base_language)
+                  .map(lang => lang.code);
+              })
+              .catch(({ message, code }) => {
+                oneSkyErrorMessageHandler(downloadingLanguages, code, message);
+              });
+          });
+
+        Promise.resolve()
+          .then(() => langsListPromise)
+          .then(langsList => {
+              console.log
+          });
+      });
+
+      /*Promise.resolve()
+        .then(() => langsListPromise)
+        .then(langsList => {
+          const downloadingSpinner = ora(
+            `Downloading translations for \`${options.fileName}\``
+          ).start();
+
+          return onesky
+            .getFile(options)
+            .then(response => {
+              downloadingSpinner.succeed();
+
+              const translations = JSON.parse(response);
+              const translationCodes = Object.keys(translations);
+
+              langsList.forEach(code => {
+                const lang = translations[code];
+                const ext = path.parse(options.fileName).ext;
+                const filename = `${code}${ext}`;
+                const filepath = path.join(file, filename);
+                const savingSpinner = ora(`Saving \`${filepath}\``).start();
+
+                if (!lang || !lang.translation) {
+                  savingSpinner.fail(
+                    `There is no translation for \`${code}\` code. Found \`${translationCodes.join(
+                      ", "
+                    )}\` instead`
+                  );
+                  return;
+                }
+
+                fs
+                  .ensureFile(filepath)
+                  .then(() => {
+                    return fs.writeJson(filepath, lang.translation, {
+                      spaces: 2
+                    });
+                  })
+                  .catch(({ message }) => {
+                    oneSkyErrorMessageHandler(savingSpinner, null, message);
+                  });
+
+                savingSpinner.succeed();
+              });
+            })
+            .catch(({ message, code }) => {
+              oneSkyErrorMessageHandler(downloadingSpinner, code, message);
+            });
+        });*/
+    },
+    downloadMulti() {
       if (!files.length) {
         validationError("Path to output directory is required");
       }
